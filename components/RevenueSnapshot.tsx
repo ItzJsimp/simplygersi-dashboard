@@ -26,7 +26,8 @@ export default function RevenueSnapshot({ data }: { data: RevenueData }) {
   return (
     <div className="rounded-xl bg-[#12121e] border border-[#1e1e30] p-5 h-full">
       <h2 className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 mb-4">
-        Revenue Snapshot — {new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
+        Revenue Snapshot —{' '}
+        {new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' })}
       </h2>
 
       {/* Main stat */}
@@ -42,13 +43,11 @@ export default function RevenueSnapshot({ data }: { data: RevenueData }) {
       </div>
 
       {/* Progress bar */}
-      <div className="mb-1">
-        <div className="h-3 bg-[#1a1a2e] rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full ${barColor}`}
-            style={{ width: `${pct}%`, transition: 'width 0.8s ease' }}
-          />
-        </div>
+      <div className="h-3 bg-[#1a1a2e] rounded-full overflow-hidden mb-1">
+        <div
+          className={`h-full rounded-full ${barColor}`}
+          style={{ width: `${pct}%`, transition: 'width 0.8s ease' }}
+        />
       </div>
       <div className="flex justify-between items-center text-xs mb-5">
         <span className={`font-semibold tabular-nums ${pctColor}`}>{pct}%</span>
@@ -58,20 +57,32 @@ export default function RevenueSnapshot({ data }: { data: RevenueData }) {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         <div className="rounded-lg bg-[#0f0f17] border border-[#1e1e30] p-3">
           <div className="text-[11px] text-slate-500 mb-1">Invoiced (Unpaid)</div>
           <div className="text-xl font-semibold text-amber-400 tabular-nums">
             {usd(data.totalInvoiced)}
           </div>
-          <div className="text-[10px] text-slate-600 mt-0.5">outstanding</div>
         </div>
         <div className="rounded-lg bg-[#0f0f17] border border-[#1e1e30] p-3">
           <div className="text-[11px] text-slate-500 mb-1">Active Deals</div>
           <div className="text-xl font-semibold text-teal-400 tabular-nums">
             {data.activeDealsCount}
           </div>
-          <div className="text-[10px] text-slate-600 mt-0.5">in pipeline</div>
+        </div>
+        <div className="rounded-lg bg-[#0f0f17] border border-[#1e1e30] p-3">
+          <div className="text-[11px] text-slate-500 mb-1">Overdue Invoices</div>
+          <div
+            className={`text-xl font-semibold tabular-nums ${
+              data.overdueInvoiceCount > 0 ? 'text-red-400' : 'text-slate-500'
+            }`}
+          >
+            {data.overdueInvoiceCount}
+          </div>
+        </div>
+        <div className="rounded-lg bg-[#0f0f17] border border-[#1e1e30] p-3">
+          <div className="text-[11px] text-slate-500 mb-1">Goal</div>
+          <div className={`text-xl font-semibold tabular-nums ${pctColor}`}>{pct}%</div>
         </div>
       </div>
     </div>

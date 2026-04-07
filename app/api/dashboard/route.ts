@@ -4,7 +4,10 @@ import {
   fetchRevenue,
   fetchTasks,
   fetchGoals,
-  filterContentTasks,
+  fetchContentHub,
+  fetchNotes,
+  fetchResources,
+  fetchThreadReviews,
 } from '@/lib/notion';
 import type { DashboardData } from '@/types';
 
@@ -16,14 +19,17 @@ const MONTHLY_GOAL = 5000;
 
 export async function GET() {
   try {
-    const [deals, revenue, tasks, goals] = await Promise.all([
-      fetchDeals(),
-      fetchRevenue(),
-      fetchTasks(),
-      fetchGoals(),
-    ]);
-
-    const contentTasks = filterContentTasks(tasks);
+    const [deals, revenue, tasks, goals, contentItems, notes, resources, threadReviews] =
+      await Promise.all([
+        fetchDeals(),
+        fetchRevenue(),
+        fetchTasks(),
+        fetchGoals(),
+        fetchContentHub(),
+        fetchNotes(),
+        fetchResources(),
+        fetchThreadReviews(),
+      ]);
 
     const data: DashboardData = {
       deals,
@@ -31,11 +37,15 @@ export async function GET() {
         collected: revenue.collected,
         goal: MONTHLY_GOAL,
         totalInvoiced: revenue.totalInvoiced,
+        overdueInvoiceCount: revenue.overdueInvoiceCount,
         activeDealsCount: deals.length,
       },
       tasks,
-      contentTasks,
+      contentItems,
       goals,
+      notes,
+      resources,
+      threadReviews,
       lastUpdated: new Date().toISOString(),
     };
 

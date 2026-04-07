@@ -4,9 +4,12 @@ import { useState, useEffect, useCallback } from 'react';
 import type { DashboardData } from '@/types';
 import RevenueSnapshot from '@/components/RevenueSnapshot';
 import DealPulse from '@/components/DealPulse';
-import TasksSection from '@/components/TasksSection';
+import TaskStack from '@/components/TaskStack';
 import ContentPipeline from '@/components/ContentPipeline';
-import GoalsSection from '@/components/GoalsSection';
+import GoalPulse from '@/components/GoalPulse';
+import NotesInbox from '@/components/NotesInbox';
+import ResourcesInbox from '@/components/ResourcesInbox';
+import ThreadPulse from '@/components/ThreadPulse';
 import QuickLinks from '@/components/QuickLinks';
 
 function RefreshIcon({ spinning }: { spinning: boolean }) {
@@ -29,14 +32,17 @@ function RefreshIcon({ spinning }: { spinning: boolean }) {
 
 function Skeleton() {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div
-          key={i}
-          className="rounded-xl bg-[#12121e] border border-[#1e1e30] animate-pulse"
-          style={{ height: i === 0 ? '180px' : '220px' }}
-        />
-      ))}
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 h-52 rounded-xl bg-[#12121e] border border-[#1e1e30] animate-pulse" />
+        <div className="h-52 rounded-xl bg-[#12121e] border border-[#1e1e30] animate-pulse" />
+      </div>
+      <div className="h-44 rounded-xl bg-[#12121e] border border-[#1e1e30] animate-pulse" />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-48 rounded-xl bg-[#12121e] border border-[#1e1e30] animate-pulse" />
+        ))}
+      </div>
     </div>
   );
 }
@@ -58,8 +64,7 @@ export default function Dashboard() {
       const json: DashboardData = await res.json();
       setData(json);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error';
-      setError(`Could not load dashboard data: ${msg}`);
+      setError(err instanceof Error ? err.message : 'Unknown error');
     } finally {
       setLoading(false);
     }
@@ -70,10 +75,7 @@ export default function Dashboard() {
   }, [fetchData]);
 
   const formattedTime = data
-    ? new Date(data.lastUpdated).toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      })
+    ? new Date(data.lastUpdated).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : null;
 
   return (
@@ -82,7 +84,6 @@ export default function Dashboard() {
       <header className="sticky top-0 z-20 border-b border-[#1e1e30] bg-[#0d0d15]/90 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            {/* Logo mark */}
             <div className="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/30 flex items-center justify-center shrink-0">
               <span className="text-teal-400 text-xs font-bold">SG</span>
             </div>
@@ -92,11 +93,7 @@ export default function Dashboard() {
                 <span className="text-white">Gersi</span>
               </h1>
               <p className="text-[11px] text-slate-600 mt-0.5 leading-none">
-                {loading
-                  ? 'Refreshing…'
-                  : formattedTime
-                  ? `Updated ${formattedTime}`
-                  : 'Business Dashboard'}
+                {loading ? 'Refreshing…' : formattedTime ? `Updated ${formattedTime}` : 'Dashboard'}
               </p>
             </div>
           </div>
@@ -114,21 +111,19 @@ export default function Dashboard() {
 
       {/* ── Main ────────────────────────────────────── */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-5 space-y-4">
-        {/* Error banner */}
         {error && (
           <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
             <strong>Error:</strong> {error}
             <p className="text-xs text-red-500 mt-1">
-              Check that your Notion API key and database IDs are set in <code>.env.local</code> and
-              your integration has been invited to each database.
+              Check that your Notion API key and database IDs are in{' '}
+              <code className="font-mono">.env.local</code> and each database has the integration
+              connected.
             </p>
           </div>
         )}
 
-        {/* Loading skeleton */}
         {loading && !data && <Skeleton />}
 
-        {/* Dashboard */}
         {data && (
           <>
             {/* Row 1: Revenue (2/3) + Quick Links (1/3) */}
@@ -139,17 +134,26 @@ export default function Dashboard() {
               <QuickLinks />
             </div>
 
-            {/* Row 2: Deal Pulse (full width) */}
+            {/* Row 2: Deal Pulse — full width */}
             <DealPulse deals={data.deals} />
 
-            {/* Row 3: Tasks + Content Pipeline */}
+            {/* Row 3: Task Stack + Content Pipeline */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <TasksSection tasks={data.tasks} />
-              <ContentPipeline tasks={data.contentTasks} />
+              <TaskStack tasks={data.tasks} />
+              <ContentPipeline items={data.contentItems} />
             </div>
 
-            {/* Row 4: Goals (full width) */}
-            <GoalsSection goals={data.goals} />
+            {/* Row 4: Goal Pulse + Thread / Momentum Pulse */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <GoalPulse goals={data.goals} />
+              <ThreadPulse reviews={data.threadReviews} />
+            </div>
+
+            {/* Row 5: Notes Inbox + Resources Inbox */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <NotesInbox notes={data.notes} />
+              <ResourcesInbox resources={data.resources} />
+            </div>
           </>
         )}
       </main>

@@ -2,13 +2,21 @@
  * Notion data layer for SimplyGersi Dashboard.
  *
  * Property-name matching is intentionally flexible — it tries several common
- * variations so you don't have to rename your Notion columns. If something
- * isn't showing up, check the console for "[notion]" errors and compare
- * the logged property names to the ones in findProp() calls below.
+ * variations so you don't have to rename your Notion columns.
+ *
+ * If a section shows empty data when it shouldn't, check the Vercel Function
+ * logs (or `npm run dev` terminal) for "[notion]" error lines. They will show
+ * the exact property names Notion returned so you can add them to the
+ * findProp() calls below.
+ *
+ * v1 source set:
+ *   TIER 1: Tasks, Deal HUB, Goals, Invoices, Payments Received, Content HUB
+ *   TIER 2: Notes, Resources, AI Thread Reviews
+ *   PHASE 2 (not built): Brand Outreach
  */
 
 import { Client } from '@notionhq/client';
-import type { Deal, Task, Goal } from '@/types';
+import type { Deal, Task, Goal, ContentItem, Note, Resource, ThreadReview } from '@/types';
 
 const notion = new Client({ auth: process.env.NOTION_API_KEY });
 
@@ -58,6 +66,19 @@ function getDate(prop: any): string | null {
   return null;
 }
 
+function getUrl(prop: any): string | null {
+  if (!prop) return null;
+  if (prop.type === 'url') return prop.url ?? null;
+  if (prop.type === 'rich_text') return getText(prop) || null;
+  return null;
+}
+
+function getCheckbox(prop: any): boolean {
+  if (!prop) return false;
+  if (prop.type === 'checkbox') return prop.checkbox ?? false;
+  return false;
+}
+
 function notConfigured(val: string | undefined): boolean {
   return !val || val.includes('[PASTE') || val.trim().length < 10;
 }
@@ -79,11 +100,17 @@ const INACTIVE_GOAL = new Set([
   'done', 'complete', 'completed', 'archived', 'cancelled', 'canceled',
 ]);
 
-// Keywords that classify a task as "content"
-export const CONTENT_KEYWORDS = [
-  'content', 'video', 'ugc', 'tiktok', 'creative',
-  'filming', 'editing', 'reels', 'post', 'shoot',
-];
+const DONE_CONTENT = new Set([
+  'posted', 'published', 'done', 'complete', 'completed', 'archived', 'cancelled', 'canceled',
+]);
+
+const PROCESSED_NOTE = new Set([
+  'processed', 'done', 'complete', 'completed', 'archived', 'filed',
+]);
+
+const PROCESSED_RESOURCE = new Set([
+  'done', 'applied', 'archived', 'used', 'complete', 'completed', 'filed',
+]);
 
 // Priority sort order (lower = higher priority)
 const PRIORITY_RANK: Record<string, number> = {
@@ -94,7 +121,7 @@ const PRIORITY_RANK: Record<string, number> = {
 };
 
 // ─────────────────────────────────────────────
-// Fetchers
+// TIER 1 Fetchers
 // ─────────────────────────────────────────────
 
 export async function fetchDeals(): Promise<Deal[]> {
@@ -115,9 +142,6 @@ export async function fetchDeals(): Promise<Deal[]> {
       );
       if (INACTIVE_DEAL.has(status.toLowerCase())) continue;
 
-      const name =
-        getText(findProp(props, 'Name', 'Deal Name', 'Title', 'name')) || 'Untitled Deal';
-
       const brand =
         getText(findProp(props, 'Brand', 'Company', 'Client', 'Partner', 'Sponsor')) ||
         getSelect(findProp(props, 'Brand', 'Company', 'Client', 'Partner', 'Sponsor')) ||
@@ -133,7 +157,7 @@ export async function fetchDeals(): Promise<Deal[]> {
 
       deals.push({
         id: page.id,
-        name,
+        name: getText(findProp(props, 'Name', 'Deal Name', 'Title', 'name')) || 'Untitled Deal',
         brand,
         status: status || 'Active',
         amount,
@@ -150,14 +174,20 @@ export async function fetchDeals(): Promise<Deal[]> {
   }
 }
 
-export async function fetchRevenue(): Promise<{ collected: number; totalInvoiced: number }> {
+export async function fetchRevenue(): Promise<{
+  collected: number;
+  totalInvoiced: number;
+  overdueInvoiceCount: number;
+}> {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
     .toISOString()
     .split('T')[0];
+  const todayStr = now.toISOString().split('T')[0];
 
   let collected = 0;
   let totalInvoiced = 0;
+  let overdueInvoiceCount = 0;
 
   // ── Payments received this month ─────────────────
   if (!notConfigured(process.env.NOTION_PAYMENTS_DB_ID)) {
@@ -169,7 +199,6 @@ export async function fetchRevenue(): Promise<{ collected: number; totalInvoiced
         if (!('properties' in page)) continue;
         const props = page.properties as Record<string, any>;
 
-        // Try to get a date from a property; fall back to page created_time
         const dateStr =
           getDate(findProp(props, 'Date', 'Payment Date', 'Received Date', 'Received', 'Created')) ??
           (page as any).created_time?.split('T')[0];
@@ -186,7 +215,7 @@ export async function fetchRevenue(): Promise<{ collected: number; totalInvoiced
     }
   }
 
-  // ── Unpaid invoices ───────────────────────────────
+  // ── Invoices: unpaid total + overdue count ────────
   if (!notConfigured(process.env.NOTION_INVOICES_DB_ID)) {
     try {
       const res = await notion.databases.query({
@@ -206,6 +235,9 @@ export async function fetchRevenue(): Promise<{ collected: number; totalInvoiced
             findProp(props, 'Amount', 'Total', 'Invoice Amount', 'Value', 'Fee'),
           );
           if (amount) totalInvoiced += amount;
+
+          const dueDate = getDate(findProp(props, 'Due Date', 'Due', 'Deadline', 'Date'));
+          if (dueDate && dueDate < todayStr) overdueInvoiceCount++;
         }
       }
     } catch (err) {
@@ -213,7 +245,7 @@ export async function fetchRevenue(): Promise<{ collected: number; totalInvoiced
     }
   }
 
-  return { collected, totalInvoiced };
+  return { collected, totalInvoiced, overdueInvoiceCount };
 }
 
 export async function fetchTasks(): Promise<Task[]> {
@@ -240,18 +272,15 @@ export async function fetchTasks(): Promise<Task[]> {
       const dueDateStr = getDate(
         findProp(props, 'Due Date', 'Due', 'Deadline', 'Date', 'Target Date'),
       );
-      const isOverdue = dueDateStr
-        ? new Date(dueDateStr + 'T23:59:59') < today
-        : false;
+      const isOverdue = dueDateStr ? new Date(dueDateStr + 'T23:59:59') < today : false;
 
-      const areaProp = findProp(
-        props,
-        'Area', 'Category', 'Type', 'Section', 'Project', 'Tags', 'Tag',
-      );
+      const areaProp = findProp(props, 'Area', 'Category', 'Type', 'Section', 'Project', 'Tags', 'Tag');
       const area = getSelect(areaProp) || getMultiSelect(areaProp).join(', ');
-      const priority = getSelect(
-        findProp(props, 'Priority', 'Urgency', 'Importance', 'P'),
-      );
+      const priority = getSelect(findProp(props, 'Priority', 'Urgency', 'Importance', 'P'));
+      const relatedDeal =
+        getText(findProp(props, 'Deal', 'Related Deal', 'Brand', 'Client', 'Partner')) ||
+        getSelect(findProp(props, 'Deal', 'Related Deal', 'Brand', 'Client', 'Partner')) ||
+        '';
 
       tasks.push({
         id: page.id,
@@ -260,12 +289,12 @@ export async function fetchTasks(): Promise<Task[]> {
         priority,
         dueDate: dueDateStr,
         area,
+        relatedDeal,
         isOverdue,
         url: page.url,
       });
     }
 
-    // Sort: overdue first → priority → due date
     tasks.sort((a, b) => {
       if (a.isOverdue !== b.isOverdue) return a.isOverdue ? -1 : 1;
       const pa = PRIORITY_RANK[a.priority.toLowerCase()] ?? 5;
@@ -304,9 +333,7 @@ export async function fetchGoals(): Promise<Goal[]> {
         id: page.id,
         name: getText(findProp(props, 'Name', 'Goal', 'Title', 'name')) || 'Untitled',
         status: status || 'Active',
-        progress: getNumber(
-          findProp(props, 'Progress', 'Completion', '%', 'Percent', 'Percentage'),
-        ),
+        progress: getNumber(findProp(props, 'Progress', 'Completion', '%', 'Percent', 'Percentage')),
         url: page.url,
       });
     }
@@ -318,12 +345,188 @@ export async function fetchGoals(): Promise<Goal[]> {
   }
 }
 
-export function filterContentTasks(tasks: Task[]): Task[] {
-  return tasks.filter(t =>
-    CONTENT_KEYWORDS.some(
-      k =>
-        t.area.toLowerCase().includes(k) ||
-        t.name.toLowerCase().includes(k),
-    ),
-  );
+export async function fetchContentHub(): Promise<ContentItem[]> {
+  if (notConfigured(process.env.NOTION_CONTENT_DB_ID)) return [];
+
+  try {
+    const res = await notion.databases.query({
+      database_id: process.env.NOTION_CONTENT_DB_ID!,
+    });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const items: ContentItem[] = [];
+    for (const page of res.results) {
+      if (!('properties' in page)) continue;
+      const props = page.properties as Record<string, any>;
+
+      const status = getSelect(findProp(props, 'Status', 'Content Status', 'State', 'Stage', 'Phase'));
+      if (DONE_CONTENT.has(status.toLowerCase())) continue;
+
+      const dueDateStr = getDate(
+        findProp(props, 'Due Date', 'Due', 'Publish Date', 'Deadline', 'Date', 'Scheduled Date'),
+      );
+      const isOverdue = dueDateStr ? new Date(dueDateStr + 'T23:59:59') < today : false;
+
+      const platformProp = findProp(props, 'Platform', 'Channel', 'Social', 'Network', 'Platforms');
+      const platform = getSelect(platformProp) || getMultiSelect(platformProp).join(', ');
+      const typeProp = findProp(props, 'Type', 'Content Type', 'Format', 'Category', 'Style');
+      const type = getSelect(typeProp) || getMultiSelect(typeProp).join(', ');
+      const relatedDeal =
+        getText(findProp(props, 'Deal', 'Related Deal', 'Brand', 'Client', 'Partner', 'Campaign')) ||
+        getSelect(findProp(props, 'Deal', 'Related Deal', 'Brand', 'Client', 'Partner', 'Campaign')) ||
+        '';
+
+      items.push({
+        id: page.id,
+        name: getText(findProp(props, 'Name', 'Content', 'Title', 'name')) || 'Untitled',
+        status: status || 'Not Started',
+        platform,
+        type,
+        dueDate: dueDateStr,
+        relatedDeal,
+        isOverdue,
+        url: page.url,
+      });
+    }
+
+    items.sort((a, b) => {
+      if (a.isOverdue !== b.isOverdue) return a.isOverdue ? -1 : 1;
+      if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+      if (a.dueDate) return -1;
+      if (b.dueDate) return 1;
+      return 0;
+    });
+
+    return items;
+  } catch (err) {
+    console.error('[notion] fetchContentHub:', err);
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────
+// TIER 2 Fetchers
+// ─────────────────────────────────────────────
+
+export async function fetchNotes(): Promise<Note[]> {
+  if (notConfigured(process.env.NOTION_NOTES_DB_ID)) return [];
+
+  try {
+    const res = await notion.databases.query({
+      database_id: process.env.NOTION_NOTES_DB_ID!,
+      sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+    });
+
+    const notes: Note[] = [];
+    for (const page of res.results) {
+      if (!('properties' in page)) continue;
+      const props = page.properties as Record<string, any>;
+
+      const status = getSelect(findProp(props, 'Status', 'State', 'Stage', 'Type', 'Category'));
+      if (status && PROCESSED_NOTE.has(status.toLowerCase())) continue;
+
+      notes.push({
+        id: page.id,
+        title: getText(findProp(props, 'Name', 'Title', 'Note', 'name')) || 'Untitled Note',
+        status: status || 'Inbox',
+        createdDate: (page as any).created_time?.split('T')[0] ?? null,
+        tags: getMultiSelect(findProp(props, 'Tags', 'Tag', 'Category', 'Type', 'Labels', 'Area')),
+        url: page.url,
+      });
+
+      if (notes.length >= 8) break;
+    }
+
+    return notes;
+  } catch (err) {
+    console.error('[notion] fetchNotes:', err);
+    return [];
+  }
+}
+
+export async function fetchResources(): Promise<Resource[]> {
+  if (notConfigured(process.env.NOTION_RESOURCES_DB_ID)) return [];
+
+  try {
+    const res = await notion.databases.query({
+      database_id: process.env.NOTION_RESOURCES_DB_ID!,
+      sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+    });
+
+    const resources: Resource[] = [];
+    for (const page of res.results) {
+      if (!('properties' in page)) continue;
+      const props = page.properties as Record<string, any>;
+
+      const status = getSelect(findProp(props, 'Status', 'State', 'Stage'));
+      if (status && PROCESSED_RESOURCE.has(status.toLowerCase())) continue;
+
+      resources.push({
+        id: page.id,
+        title: getText(findProp(props, 'Name', 'Title', 'Resource', 'name')) || 'Untitled',
+        resourceUrl: getUrl(findProp(props, 'URL', 'Link', 'Source', 'Url', 'url')),
+        status: status || 'To Review',
+        tags: getMultiSelect(findProp(props, 'Tags', 'Tag', 'Category', 'Labels', 'Area')),
+        type: getSelect(findProp(props, 'Type', 'Category', 'Format', 'Kind')),
+        url: page.url,
+      });
+
+      if (resources.length >= 8) break;
+    }
+
+    return resources;
+  } catch (err) {
+    console.error('[notion] fetchResources:', err);
+    return [];
+  }
+}
+
+export async function fetchThreadReviews(): Promise<ThreadReview[]> {
+  if (notConfigured(process.env.NOTION_THREAD_REVIEWS_DB_ID)) return [];
+
+  try {
+    const res = await notion.databases.query({
+      database_id: process.env.NOTION_THREAD_REVIEWS_DB_ID!,
+      sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+    });
+
+    const reviews: ThreadReview[] = [];
+    for (const page of res.results) {
+      if (!('properties' in page)) continue;
+      const props = page.properties as Record<string, any>;
+
+      const summary = getText(
+        findProp(props, 'Summary', 'Review', 'Notes', 'Content', 'Body', 'Output'),
+      );
+      const missedTasks = getText(
+        findProp(props, 'Missed Tasks', 'Flagged', 'Action Items', 'Follow Up Items', 'Tasks', 'Flags'),
+      );
+      const followUpNeeded = getCheckbox(
+        findProp(props, 'Follow Up', 'Needs Follow Up', 'Action Required', 'Flagged'),
+      );
+
+      reviews.push({
+        id: page.id,
+        title:
+          getText(findProp(props, 'Name', 'Title', 'Thread', 'Review', 'name')) || 'Thread Review',
+        date:
+          getDate(findProp(props, 'Date', 'Review Date', 'Created', 'Week')) ??
+          (page as any).created_time?.split('T')[0] ??
+          null,
+        summary,
+        missedTasks,
+        followUpNeeded,
+        url: page.url,
+      });
+
+      if (reviews.length >= 4) break; // show most recent reviews
+    }
+
+    return reviews;
+  } catch (err) {
+    console.error('[notion] fetchThreadReviews:', err);
+    return [];
+  }
 }
