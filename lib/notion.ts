@@ -157,7 +157,7 @@ export async function fetchDeals(): Promise<Deal[]> {
       );
 
       const daysSinceUpdate = Math.floor(
-        (Date.now() - new Date(page.last_edited_time).getTime()) / 86_400_000,
+        (Date.now() - new Date((page as any).last_edited_time).getTime()) / 86_400_000,
       );
 
       deals.push({
