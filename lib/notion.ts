@@ -80,7 +80,12 @@ function getCheckbox(prop: any): boolean {
 }
 
 function notConfigured(val: string | undefined): boolean {
-  return !val || val.includes('[PASTE') || val.trim().length < 10;
+  if (!val || val.trim().length < 10) return true;
+  if (val.includes('[PASTE')) return true;
+  // Detect placeholder patterns: all-x strings like "xxxxxxxx..." or "secret_xxx..."
+  const core = val.replace(/^secret_/, '').replace(/-/g, '');
+  if (/^(.)\1{6,}$/.test(core)) return true; // same char repeated 7+ times
+  return false;
 }
 
 // ─────────────────────────────────────────────
