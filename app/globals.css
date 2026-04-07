@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom scrollbar — teal tint */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #0f0f17;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(45, 212, 191, 0.25);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(45, 212, 191, 0.55);
+}
+
+/* Smooth transitions */
+* {
+  transition-property: color, background-color, border-color, opacity;
+  transition-duration: 150ms;
+  transition-timing-function: ease;
+}
+
+/* Prevent transition on page load */
+.no-transition * {
+  transition: none !important;
+}
