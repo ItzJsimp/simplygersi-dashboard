@@ -153,7 +153,7 @@ export async function fetchDeals(): Promise<Deal[]> {
         '—';
 
       const amount = getNumber(
-        findProp(props, 'Amount', 'Rate', 'Fee', 'Value', 'Deal Value', 'Budget', 'Price', 'Total'),
+        findProp(props, 'Expected Deal Amount', 'Amount', 'Rate', 'Fee', 'Value', 'Deal Value', 'Budget', 'Price', 'Total'),
       );
 
       const daysSinceUpdate = Math.floor(
@@ -503,21 +503,31 @@ export async function fetchThreadReviews(): Promise<ThreadReview[]> {
       const props = page.properties as Record<string, any>;
 
       const summary = getText(
-        findProp(props, 'Summary', 'Review', 'Notes', 'Content', 'Body', 'Output'),
+        findProp(props, 'Notes', 'Summary', 'Review', 'Content', 'Body', 'Output'),
       );
-      const missedTasks = getText(
-        findProp(props, 'Missed Tasks', 'Flagged', 'Action Items', 'Follow Up Items', 'Tasks', 'Flags'),
-      );
-      const followUpNeeded = getCheckbox(
-        findProp(props, 'Follow Up', 'Needs Follow Up', 'Action Required', 'Flagged'),
-      );
+
+      // Actual schema: numeric counts
+      const missedCount = getNumber(findProp(props, 'Missed Tasks Flagged', 'Missed Tasks', 'Flagged Tasks')) ?? 0;
+      const threadsFollowUp = getNumber(findProp(props, 'Threads Needing Follow-Up', 'Follow-Up Threads', 'Follow Up Threads')) ?? 0;
+
+      const missedTasks =
+        missedCount > 0 || threadsFollowUp > 0
+          ? [
+              missedCount > 0 ? `${missedCount} missed task${missedCount !== 1 ? 's' : ''} flagged` : '',
+              threadsFollowUp > 0 ? `${threadsFollowUp} thread${threadsFollowUp !== 1 ? 's' : ''} needing follow-up` : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')
+          : '';
+
+      const followUpNeeded = threadsFollowUp > 0 || missedCount > 0;
 
       reviews.push({
         id: page.id,
         title:
-          getText(findProp(props, 'Name', 'Title', 'Thread', 'Review', 'name')) || 'Thread Review',
+          getText(findProp(props, 'Run Name', 'Name', 'Title', 'Thread', 'Review', 'name')) || 'Thread Review',
         date:
-          getDate(findProp(props, 'Date', 'Review Date', 'Created', 'Week')) ??
+          getDate(findProp(props, 'Run Date', 'Date', 'Review Date', 'Created', 'Week')) ??
           (page as any).created_time?.split('T')[0] ??
           null,
         summary,
