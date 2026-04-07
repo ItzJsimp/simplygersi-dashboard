@@ -168,7 +168,7 @@ export async function fetchDeals(): Promise<Deal[]> {
         amount,
         daysSinceUpdate,
         stalled: daysSinceUpdate >= 7,
-        url: page.url,
+        url: (page as any).url,
       });
     }
 
@@ -296,7 +296,7 @@ export async function fetchTasks(): Promise<Task[]> {
         area,
         relatedDeal,
         isOverdue,
-        url: page.url,
+        url: (page as any).url,
       });
     }
 
@@ -339,7 +339,7 @@ export async function fetchGoals(): Promise<Goal[]> {
         name: getText(findProp(props, 'Name', 'Goal', 'Title', 'name')) || 'Untitled',
         status: status || 'Active',
         progress: getNumber(findProp(props, 'Progress', 'Completion', '%', 'Percent', 'Percentage')),
-        url: page.url,
+        url: (page as any).url,
       });
     }
 
@@ -392,7 +392,7 @@ export async function fetchContentHub(): Promise<ContentItem[]> {
         dueDate: dueDateStr,
         relatedDeal,
         isOverdue,
-        url: page.url,
+        url: (page as any).url,
       });
     }
 
@@ -438,7 +438,7 @@ export async function fetchNotes(): Promise<Note[]> {
         status: status || 'Inbox',
         createdDate: (page as any).created_time?.split('T')[0] ?? null,
         tags: getMultiSelect(findProp(props, 'Tags', 'Tag', 'Category', 'Type', 'Labels', 'Area')),
-        url: page.url,
+        url: (page as any).url,
       });
 
       if (notes.length >= 8) break;
@@ -475,7 +475,7 @@ export async function fetchResources(): Promise<Resource[]> {
         status: status || 'To Review',
         tags: getMultiSelect(findProp(props, 'Tags', 'Tag', 'Category', 'Labels', 'Area')),
         type: getSelect(findProp(props, 'Type', 'Category', 'Format', 'Kind')),
-        url: page.url,
+        url: (page as any).url,
       });
 
       if (resources.length >= 8) break;
@@ -533,7 +533,7 @@ export async function fetchThreadReviews(): Promise<ThreadReview[]> {
         summary,
         missedTasks,
         followUpNeeded,
-        url: page.url,
+        url: (page as any).url,
       });
 
       if (reviews.length >= 4) break; // show most recent reviews
